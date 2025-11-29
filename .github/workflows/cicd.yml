@@ -119,16 +119,26 @@ jobs:
           ls -l image_${{ github.sha }}.tar
           file image_${{ github.sha }}.tar || true
 
-      - name: Run Trivy (container) - scan image tar for HIGH/CRITICAL
+      - name: Install Trivy CLI (official install script)
+        # using the official install script avoids Docker pulls and action-tag issues
+        run: |
+          set -euo pipefail
+          # install specific version or "latest"
+          TRIVY_VERSION="0.45.0"
+          echo "Installing Trivy ${TRIVY_VERSION}"
+          # Download and run the official install script (it fetches binary for the runner)
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
+          trivy --version
+
+      - name: Run Trivy scan (fail on HIGH/CRITICAL)
         env:
           TRIVY_SEVERITY: "CRITICAL,HIGH"
         run: |
-          docker pull aquasecurity/trivy:0.45.0
-          docker run --rm \
-            -v "${{ github.workspace }}":/work \
-            -w /work \
-            aquasecurity/trivy:0.45.0 \
-            image --exit-code 1 --severity $TRIVY_SEVERITY --no-progress --input image_${{ github.sha }}.tar || { echo "Trivy found HIGH/CRITICAL vulnerabilities"; exit 1; }
+          set -euo pipefail
+          IMAGE_TAR=image_${{ github.sha }}.tar
+          echo "Scanning ${IMAGE_TAR} for severities ${TRIVY_SEVERITY}"
+          # trivy will exit with non-zero when finding vulnerabilities if --exit-code set
+          trivy image --exit-code 1 --severity $TRIVY_SEVERITY --no-progress --input "${IMAGE_TAR}" || { echo "::error ::Trivy found HIGH/CRITICAL vulnerabilities"; exit 1; }
 
   push:
     name: Push image to GHCR
