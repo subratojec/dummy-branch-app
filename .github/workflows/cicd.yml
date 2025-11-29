@@ -124,7 +124,7 @@ jobs:
         run: |
           set -euo pipefail
           # install specific version or "latest"
-          TRIVY_VERSION="0.45.0"
+          TRIVY_VERSION="latest"
           echo "Installing Trivy ${TRIVY_VERSION}"
           # Download and run the official install script (it fetches binary for the runner)
           curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sudo sh -s -- -b /usr/local/bin "${TRIVY_VERSION}"
