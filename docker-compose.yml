@@ -1,33 +1,70 @@
-services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: microloans
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d microloans"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+version: "3.9"
 
+# Shared DB environment defaults
+x-default-environment: &default-env
+  POSTGRES_DB: ${POSTGRES_DB:-microloans}
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+
+services:
   api:
     build: .
+    container_name: branch-api
+    env_file:
+      - .env.${ENV:-dev}
     environment:
-      FLASK_ENV: development
-      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/microloans
-      PORT: 8000
-      PYTHONPATH: /app
+      DATABASE_URL: "${DATABASE_URL}"
+      FLASK_ENV: ${FLASK_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       db:
         condition: service_healthy
     ports:
-      - "8000:8000"
-    command: gunicorn -w 2 -b 0.0.0.0:8000 wsgi:app
+      - "${API_PORT:-8000}:8000"
+    profiles: ["dev", "staging", "prod"]
+
+    # only active in dev (overridden via profile)
+    volumes:
+      - ./app:/app/app
+      - ./scripts:/app/scripts
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  db:
+    image: postgres:15
+    container_name: branch-db
+    restart: always
+    env_file:
+      - .env.${ENV:-dev}
+    environment:
+      <<: *default-env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles: ["dev","staging","prod"]
+
+  nginx:
+    image: nginx:stable
+    container_name: branch-nginx
+    depends_on:
+      - api
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/cert.pem:/certs/cert.pem:ro
+      - ./docker/nginx/key.pem:/certs/key.pem:ro
+    ports:
+      - "443:443"
+    profiles: ["dev","staging","prod"]
 
 volumes:
-  db_data:
+  pgdata:

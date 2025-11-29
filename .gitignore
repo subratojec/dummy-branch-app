@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
+!.env.dev.example
+!.env.staging.example
+!.env.prod.example
+
+# Secrets
+docker/nginx/key.pem
+docker/nginx/cert.pem
+
+# Docker
+*.tar
+
+# venv
+.venv/
+
+# Logs
+*.log

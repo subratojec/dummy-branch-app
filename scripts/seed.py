@@ -1,7 +1,9 @@
-import os
+import os, sys
 from uuid import UUID
 from decimal import Decimal
 from sqlalchemy import select
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.db import SessionContext
 from app.models import Loan
