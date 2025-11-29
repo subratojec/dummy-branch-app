@@ -1,6 +1,5 @@
 name: CI / Build / Scan / Release
 
-# Required permissions for GHCR pushes
 permissions:
   contents: read
   packages: write
@@ -12,7 +11,6 @@ on:
     branches: ["main"]
 
 env:
-  # image name uses the repository owner and repo name
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
@@ -20,7 +18,8 @@ jobs:
     name: Run tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -55,7 +54,8 @@ jobs:
     outputs:
       image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
@@ -69,7 +69,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: false
-          load: true            # <-- ensure image is loaded into the runner daemon
+          load: true
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: List local Docker images (debug)
@@ -105,7 +105,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Download built image artifact
         uses: actions/download-artifact@v4
@@ -113,17 +114,21 @@ jobs:
           name: built-image-${{ github.sha }}
           path: .
 
-      - name: Install trivy
-        uses: aquasecurity/trivy-action@v1
-        with:
-          version: "0.45.0"
+      - name: Verify image tar exists
+        run: |
+          ls -l image_${{ github.sha }}.tar
+          file image_${{ github.sha }}.tar || true
 
-      - name: Run Trivy scan (fail on HIGH/CRITICAL)
+      - name: Run Trivy (container) - scan image tar for HIGH/CRITICAL
         env:
           TRIVY_SEVERITY: "CRITICAL,HIGH"
         run: |
-          IMAGE_TAR=image_${{ github.sha }}.tar
-          trivy image --exit-code 1 --severity $TRIVY_SEVERITY --quiet --no-progress --input $IMAGE_TAR || { echo "Trivy found HIGH/CRITICAL vulnerabilities"; exit 1; }
+          docker pull aquasecurity/trivy:0.45.0
+          docker run --rm \
+            -v "${{ github.workspace }}":/work \
+            -w /work \
+            aquasecurity/trivy:0.45.0 \
+            image --exit-code 1 --severity $TRIVY_SEVERITY --no-progress --input image_${{ github.sha }}.tar || { echo "Trivy found HIGH/CRITICAL vulnerabilities"; exit 1; }
 
   push:
     name: Push image to GHCR
@@ -131,7 +136,8 @@ jobs:
     needs: [build, scan]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Login to GHCR
         uses: docker/login-action@v2
