@@ -1,6 +1,6 @@
 name: CI / Build / Scan / Release
 
-# required permissions for GHCR pushes
+# Required permissions for GHCR pushes
 permissions:
   contents: read
   packages: write
@@ -13,8 +13,6 @@ on:
 
 env:
   # image name uses the repository owner and repo name
-  REPO_OWNER: ${{ github.repository_owner }}
-  REPO_NAME: ${{ github.repository }}            # note: github.repository is "owner/repo"
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/${{ github.event.repository.name }}
 
 jobs:
@@ -23,10 +21,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
+
       - name: Install deps (if requirements.txt present)
         run: |
           if [ -f requirements.txt ]; then
@@ -35,6 +35,7 @@ jobs:
           else
             echo "No requirements.txt, skipping pip install"
           fi
+
       - name: Run tests (pytest if present)
         run: |
           if command -v pytest >/dev/null 2>&1; then
@@ -55,19 +56,44 @@ jobs:
       image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v2
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v2
-      - name: Build image (no push)
+
+      - name: Build image (no push, load into runner daemon)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           push: false
+          load: true            # <-- ensure image is loaded into the runner daemon
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: List local Docker images (debug)
+        run: |
+          echo "IMAGE_NAME=${IMAGE_NAME:-${{ env.IMAGE_NAME }}}"
+          echo "GITHUB_SHA=${GITHUB_SHA:-${{ github.sha }}}"
+          docker images --format "table {{.Repository}}:{{.Tag}}\t{{.ID}}\t{{.Size}}"
+          docker images | sed -n '1,200p'
+
+      - name: Ensure built image exists (fail fast if not)
+        run: |
+          IMAGE=${{ env.IMAGE_NAME }}:${{ github.sha }}
+          echo "Checking for ${IMAGE}"
+          if ! docker image inspect "${IMAGE}" >/dev/null 2>&1; then
+            echo "::error ::Image ${IMAGE} not found in local daemon. Build step may have failed or load:false was used."
+            docker images || true
+            exit 1
+          fi
+
       - name: Save built image to tar
-        run: docker save ${{ env.IMAGE_NAME }}:${{ github.sha }} -o image_${{ github.sha }}.tar
+        run: |
+          IMAGE=${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker save "${IMAGE}" -o image_${{ github.sha }}.tar
+
       - name: Upload image tar as artifact (for debugging PRs)
         uses: actions/upload-artifact@v4
         with:
@@ -80,15 +106,18 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+
       - name: Download built image artifact
         uses: actions/download-artifact@v4
         with:
           name: built-image-${{ github.sha }}
           path: .
+
       - name: Install trivy
         uses: aquasecurity/trivy-action@v1
         with:
           version: "0.45.0"
+
       - name: Run Trivy scan (fail on HIGH/CRITICAL)
         env:
           TRIVY_SEVERITY: "CRITICAL,HIGH"
@@ -103,12 +132,14 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+
       - name: Login to GHCR
         uses: docker/login-action@v2
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push image to GHCR
         uses: docker/build-push-action@v5
         with:
