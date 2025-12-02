@@ -17,7 +17,7 @@ A simple, containerized microloans REST API with full multi-environment support 
 ## Step 1 — Clone the Repository
 
 ```bash
-git clone https://github.com/<your-username>/dummy-branch-app.git
+git clone https://github.com/subratojec/dummy-branch-app.git
 cd dummy-branch-app
 ```
 
